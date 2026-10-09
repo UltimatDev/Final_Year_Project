@@ -1,64 +1,13 @@
-"""
-STEP 1 - REVISED LEAKAGE-SAFE EXPERIMENTAL TRAIN/TEST SPLIT
-
-Purpose
--------
-Create the locked 67/17 train-test split for the revised response variables:
-
-Inputs:
-    d
-    Rpm
-
-Responses:
-    hc_hi
-    td_to
-    Vch
-
-Important
----------
-The split is response-independent. The same experimental coordinates used in
-the previous project branch are retained so that the new response formulation
-can be compared consistently with the earlier analysis.
-
-Locked test Point_IDs:
-    71, 79, 83,
-    59, 64, 70,
-    43, 51, 53,
-    29, 36, 42,
-    18, 23, 27,
-    4, 8
-
-These 17 observations must not be used for:
-    - interpolation construction
-    - extrapolation model fitting
-    - ML training
-    - hyperparameter tuning
-    - model selection using test performance
-
-Expected:
-    67 Train_Anchors
-    17 Test_Holdout
-"""
-
 from pathlib import Path
 import numpy as np
 import pandas as pd
 
-
-# =============================================================================
-# 1. PATHS
-# =============================================================================
 
 BASE_DIR = Path(__file__).resolve().parent
 
 INPUT_FILE = BASE_DIR / "Original.xlsx"
 INPUT_SHEET = "Working_Data"
 OUTPUT_FILE = BASE_DIR / "Step1_Stratified_Split.xlsx"
-
-
-# =============================================================================
-# 2. DATASET DEFINITION
-# =============================================================================
 
 REQUIRED_COLUMNS = [
     "Point_ID",
@@ -89,23 +38,7 @@ LOCKED_TEST_POINT_IDS = [
 
 EXPECTED_DIAMETERS = [6, 8, 10, 12, 14, 16]
 
-
-# =============================================================================
-# 3. LOAD DATA
-# =============================================================================
-
-if not INPUT_FILE.exists():
-    raise FileNotFoundError(
-        f"Input file not found:\n{INPUT_FILE}"
-    )
-
 xls = pd.ExcelFile(INPUT_FILE)
-
-if INPUT_SHEET not in xls.sheet_names:
-    raise ValueError(
-        f"Sheet '{INPUT_SHEET}' not found.\n"
-        f"Available sheets: {xls.sheet_names}"
-    )
 
 df = pd.read_excel(
     INPUT_FILE,
@@ -123,11 +56,6 @@ if missing:
     )
 
 df = df[REQUIRED_COLUMNS].copy()
-
-
-# =============================================================================
-# 4. NUMERIC VALIDATION
-# =============================================================================
 
 for col in REQUIRED_COLUMNS:
     df[col] = pd.to_numeric(df[col], errors="raise")
@@ -157,11 +85,6 @@ if sorted(df["d"].unique().tolist()) != EXPECTED_DIAMETERS:
         f"Unexpected diameter values: {sorted(df['d'].unique().tolist())}"
     )
 
-
-# =============================================================================
-# 5. CHECK LOCKED TEST IDS
-# =============================================================================
-
 available_ids = set(df["Point_ID"].astype(int).tolist())
 locked_ids = set(LOCKED_TEST_POINT_IDS)
 
@@ -178,10 +101,6 @@ if len(LOCKED_TEST_POINT_IDS) != EXPECTED_TEST:
         "The locked test ID list does not contain exactly 17 IDs."
     )
 
-
-# =============================================================================
-# 6. CREATE SPLIT
-# =============================================================================
 
 test_df = (
     df[df["Point_ID"].isin(LOCKED_TEST_POINT_IDS)]
@@ -208,10 +127,6 @@ if len(test_df) != EXPECTED_TEST:
     )
 
 
-# =============================================================================
-# 7. LEAKAGE CHECKS
-# =============================================================================
-
 train_ids = set(train_df["Point_ID"].astype(int))
 test_ids = set(test_df["Point_ID"].astype(int))
 
@@ -231,11 +146,6 @@ if coordinate_overlap:
     raise RuntimeError(
         f"Coordinate leakage detected: {sorted(coordinate_overlap)}"
     )
-
-
-# =============================================================================
-# 8. DIAMETER REPRESENTATION
-# =============================================================================
 
 diameter_check_rows = []
 
@@ -257,11 +167,6 @@ for d in EXPECTED_DIAMETERS:
     })
 
 diameter_check = pd.DataFrame(diameter_check_rows)
-
-
-# =============================================================================
-# 9. RPM REGION REPRESENTATION
-# =============================================================================
 
 def rpm_region(rpm):
     if rpm <= 80:
@@ -288,9 +193,7 @@ for region in ["Low", "Medium", "High"]:
 rpm_check = pd.DataFrame(rpm_check_rows)
 
 
-# =============================================================================
-# 10. TEST POINT AUDIT
-# =============================================================================
+# TEST POINT AUDIT
 
 test_point_ids = (
     test_df[
@@ -302,10 +205,6 @@ test_point_ids = (
 
 test_point_ids["RPM_Region"] = test_point_ids["Rpm"].apply(rpm_region)
 
-
-# =============================================================================
-# 11. TARGET SUMMARY
-# =============================================================================
 
 target_summary_rows = []
 
@@ -324,10 +223,6 @@ for target in TARGET_COLUMNS:
 
 target_summary = pd.DataFrame(target_summary_rows)
 
-
-# =============================================================================
-# 12. 0-RPM AUDIT
-# =============================================================================
 
 zero_rpm_train = train_df[train_df["Rpm"] == 0].copy()
 zero_rpm_test = test_df[test_df["Rpm"] == 0].copy()
@@ -356,10 +251,6 @@ zero_rpm_audit = pd.DataFrame([
 ])
 
 
-# =============================================================================
-# 13. SPLIT LOG
-# =============================================================================
-
 split_log = pd.DataFrame([
     ["Input observations", len(df)],
     ["Training anchors", len(train_df)],
@@ -375,11 +266,6 @@ split_log = pd.DataFrame([
     ["Point_ID leakage", len(id_overlap)],
     ["Status", "LOCKED" if not id_overlap and not coordinate_overlap else "FAILED"],
 ], columns=["Item", "Value"])
-
-
-# =============================================================================
-# 14. VALIDATION STATUS
-# =============================================================================
 
 overall_status = pd.DataFrame([{
     "Check": "Revised Step 1 split",
@@ -400,10 +286,6 @@ overall_status = pd.DataFrame([{
     "Coordinate_Overlap": len(coordinate_overlap),
 }])
 
-
-# =============================================================================
-# 15. WRITE WORKBOOK
-# =============================================================================
 
 with pd.ExcelWriter(
     OUTPUT_FILE,
@@ -470,10 +352,6 @@ with pd.ExcelWriter(
         index=False
     )
 
-
-# =============================================================================
-# 16. CONSOLE SUMMARY
-# =============================================================================
 
 print("=" * 78)
 print("STEP 1 - REVISED LEAKAGE-SAFE EXPERIMENTAL TRAIN/TEST SPLIT")

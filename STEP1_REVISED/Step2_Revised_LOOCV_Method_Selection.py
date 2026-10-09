@@ -1,63 +1,9 @@
 """
-STEP 2 - REVISED LOOCV METHOD SELECTION
-
-Purpose
--------
-Compare candidate mathematical prediction/interpolation methods for the
-three revised experimental responses:
-
-    hc_hi
-    td_to
-    Vch
-
-ONLY the 67 Train_Anchors from Step 1 are used.
-
-The 17 Test_Holdout observations are NOT used anywhere in this step.
-
-Candidate methods
------------------
 1. Linear Griddata
 2. Cubic Griddata
 3. 1st-order RSM
 4. 2nd-order RSM
 5. 3rd-order RSM
-
-Validation
-----------
-Leave-One-Out Cross-Validation (LOOCV) over the 67 training anchors.
-
-For each target and each method:
-    - remove one training observation
-    - fit the method on the remaining training observations
-    - predict the removed observation
-    - repeat for all 67 anchors where prediction is possible
-
-Griddata may return NaN for some folds when the held-out point lies outside
-the convex hull of the remaining coordinates. Such folds are reported and
-NOT silently replaced.
-
-Metrics
--------
-R2
-RMSE
-MAE
-MSE
-MAPE
-
-Method selection
-----------------
-No method is selected using R2 alone.
-
-A summary table is produced so that model selection can consider:
-    - predictive error
-    - R2
-    - valid-fold coverage
-    - numerical stability
-
-The default "Best_Candidate" flag is based primarily on lowest RMSE among
-methods with valid predictions on all 67 folds. If no method has full
-coverage, the best-coverage / lowest-RMSE candidate is reported as a
-candidate only. Final selection should be reviewed before being locked.
 """
 
 from pathlib import Path
@@ -76,20 +22,11 @@ from sklearn.metrics import (
 
 warnings.filterwarnings("ignore")
 
-
-# =============================================================================
-# 1. PATHS
-# =============================================================================
-
 BASE_DIR = Path(__file__).resolve().parent
 
 INPUT_FILE = BASE_DIR / "Step1_Stratified_Split.xlsx"
 OUTPUT_FILE = BASE_DIR / "Step2_LOOCV_Results.xlsx"
 
-
-# =============================================================================
-# 2. CONFIGURATION
-# =============================================================================
 
 REQUIRED_COLUMNS = [
     "Point_ID",
@@ -125,10 +62,6 @@ RSM_DEGREES = {
     "3rd-order RSM": 3,
 }
 
-
-# =============================================================================
-# 3. METRIC FUNCTIONS
-# =============================================================================
 
 def calculate_metrics(y_true, y_pred):
     """
@@ -185,10 +118,6 @@ def calculate_metrics(y_true, y_pred):
     }
 
 
-# =============================================================================
-# 4. MODEL PREDICTION FUNCTIONS
-# =============================================================================
-
 def griddata_predict(x_train, y_train, x_test, method):
     """
     Predict one point using scipy.griddata.
@@ -234,11 +163,6 @@ def rsm_predict(x_train, y_train, x_test, degree):
 
     return prediction
 
-
-# =============================================================================
-# 5. LOAD STEP 1 TRAINING DATA
-# =============================================================================
-
 if not INPUT_FILE.exists():
     raise FileNotFoundError(
         f"Input file not found:\n{INPUT_FILE}"
@@ -277,11 +201,6 @@ if "Test_Holdout" not in xls.sheet_names:
     raise ValueError(
         "Test_Holdout sheet is missing from Step1_Stratified_Split.xlsx."
     )
-
-
-# =============================================================================
-# 6. LOOCV
-# =============================================================================
 
 summary_rows = []
 fold_rows = []
@@ -399,10 +318,6 @@ for target in TARGETS:
         })
 
 
-# =============================================================================
-# 7. RESULTS TABLE
-# =============================================================================
-
 summary_df = pd.DataFrame(summary_rows)
 
 # Rank methods within each target.
@@ -457,13 +372,6 @@ for target in TARGETS:
 
 ranking_df = pd.DataFrame(ranking_rows)
 
-
-# =============================================================================
-# 8. BEST CANDIDATE SUMMARY
-# =============================================================================
-# This is a candidate ranking, NOT an irreversible lock.
-# The user/researcher should inspect the complete metrics and coverage.
-
 best_rows = []
 
 for target in TARGETS:
@@ -493,11 +401,6 @@ for target in TARGETS:
 
 best_df = pd.DataFrame(best_rows)
 
-
-# =============================================================================
-# 9. COVERAGE SUMMARY
-# =============================================================================
-
 coverage_df = (
     summary_df[
         [
@@ -515,11 +418,6 @@ coverage_df = (
     )
     .reset_index(drop=True)
 )
-
-
-# =============================================================================
-# 10. METHOD DEFINITIONS
-# =============================================================================
 
 method_definitions = pd.DataFrame([
     {
@@ -553,11 +451,6 @@ method_definitions = pd.DataFrame([
         "Can_Extrapolate": "Yes",
     },
 ])
-
-
-# =============================================================================
-# 11. VALIDATION LOG
-# =============================================================================
 
 validation_log = pd.DataFrame([
     {
@@ -594,10 +487,6 @@ validation_log = pd.DataFrame([
     },
 ])
 
-
-# =============================================================================
-# 12. WRITE WORKBOOK
-# =============================================================================
 
 with pd.ExcelWriter(
     OUTPUT_FILE,
@@ -647,11 +536,6 @@ with pd.ExcelWriter(
         sheet_name="Validation_Log",
         index=False,
     )
-
-
-# =============================================================================
-# 13. CONSOLE OUTPUT
-# =============================================================================
 
 print("=" * 78)
 print("STEP 2 - REVISED LOOCV METHOD SELECTION")

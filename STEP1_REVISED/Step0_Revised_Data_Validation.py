@@ -18,33 +18,15 @@ Revised responses:
 Expected experimental design:
     6 diameters x 14 RPM levels = 84 real observations
 
-This step DOES NOT:
-    - split the data
-    - interpolate
-    - extrapolate
-    - fit any model
-    - modify experimental values
-
-It only validates the canonical Working_Data table and creates an audit
-workbook for Step 1.
-
-Expected input:
-    Original.xlsx
-    sheet: Working_Data
-
 Expected columns:
     Point_ID | d | Rpm | hc_hi | td/to | Vch
 """
 
+# imports and setup
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-
-
-# =============================================================================
-# 1. PATHS
-# =============================================================================
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -53,9 +35,6 @@ INPUT_SHEET = "Working_Data"
 OUTPUT_FILE = BASE_DIR / "Step0_Revised_Data_Validation.xlsx"
 
 
-# =============================================================================
-# 2. EXPECTED DATASET DEFINITION
-# =============================================================================
 
 REQUIRED_COLUMNS = [
     "Point_ID",
@@ -77,51 +56,30 @@ TARGET_COLUMNS = [
     "Vch",
 ]
 
-
-# =============================================================================
-# 3. HELPER
-# =============================================================================
-
+#helper function
 def check(condition, passed_message, failed_message):
     return {
         "Status": "PASS" if condition else "FAIL",
         "Check": passed_message if condition else failed_message,
     }
 
-
-# =============================================================================
-# 4. LOAD DATA
-# =============================================================================
-
-if not INPUT_FILE.exists():
-    raise FileNotFoundError(
-        f"Input file not found:\n{INPUT_FILE}"
-    )
+# Loading Data
 
 xls = pd.ExcelFile(INPUT_FILE)
-
-if INPUT_SHEET not in xls.sheet_names:
-    raise ValueError(
-        f"Required sheet '{INPUT_SHEET}' not found in {INPUT_FILE.name}.\n"
-        f"Available sheets: {xls.sheet_names}"
-    )
 
 df = pd.read_excel(
     INPUT_FILE,
     sheet_name=INPUT_SHEET
 )
 
-print("=" * 78)
+
 print("STEP 0 - REVISED DATA VALIDATION")
-print("=" * 78)
 print(f"Input:  {INPUT_FILE}")
 print(f"Sheet:  {INPUT_SHEET}")
 print()
 
 
-# =============================================================================
-# 5. COLUMN CHECK
-# =============================================================================
+# check for columns
 
 missing_columns = [
     col for col in REQUIRED_COLUMNS
@@ -134,32 +92,7 @@ if missing_columns:
         + "\n".join(f"  - {col}" for col in missing_columns)
     )
 
-# Keep only canonical columns for the modelling table.
 working = df[REQUIRED_COLUMNS].copy()
-
-# =============================================================================
-# 6. HANDLE DIAMETER BLANKS SAFELY
-# =============================================================================
-# Some source spreadsheets store d only on the first row of a diameter block.
-# We allow this representation and forward-fill d ONLY for blank cells.
-# Existing nonblank d values are never changed.
-
-d_before = int(working["d"].isna().sum())
-
-if d_before > 0:
-    working["d"] = working["d"].ffill()
-
-d_after = int(working["d"].isna().sum())
-
-if d_after > 0:
-    raise ValueError(
-        "Diameter column still contains blank values after forward-fill."
-    )
-
-
-# =============================================================================
-# 7. NUMERIC CONVERSION
-# =============================================================================
 
 numeric_columns = [
     "Point_ID",
@@ -196,10 +129,7 @@ if conversion_errors:
     )
 
 
-# =============================================================================
-# 8. BASIC SIZE CHECKS
-# =============================================================================
-
+# check size
 basic_checks = []
 
 basic_checks.append({
@@ -232,10 +162,8 @@ basic_checks.append({
 })
 
 
-# =============================================================================
-# 9. UNIQUE VALUES
-# =============================================================================
 
+# check unique values
 actual_diameters = sorted(
     working["d"].dropna().unique().tolist()
 )
@@ -260,10 +188,7 @@ unique_values = pd.DataFrame([
 ])
 
 
-# =============================================================================
-# 10. MISSING-VALUE CHECK
-# =============================================================================
-
+# check missing values
 missing_rows = []
 
 for col in REQUIRED_COLUMNS:
@@ -278,10 +203,7 @@ for col in REQUIRED_COLUMNS:
 missing_df = pd.DataFrame(missing_rows)
 
 
-# =============================================================================
-# 11. POINT_ID DUPLICATE CHECK
-# =============================================================================
-
+# check point id duplicates
 duplicate_point_id = working[
     working["Point_ID"].duplicated(keep=False)
 ].sort_values("Point_ID")
@@ -293,10 +215,7 @@ point_id_check = pd.DataFrame([{
 }])
 
 
-# =============================================================================
-# 12. (d, RPM) DUPLICATE CHECK
-# =============================================================================
-
+# (d,rpm) duplicate check
 duplicate_coordinates = working[
     working.duplicated(["d", "Rpm"], keep=False)
 ].sort_values(["d", "Rpm"])
@@ -312,9 +231,7 @@ coordinate_duplicate_check = pd.DataFrame([{
 }])
 
 
-# =============================================================================
-# 13. COMPLETE FACTORIAL GRID CHECK
-# =============================================================================
+# COMPLETE FACTORIAL GRID CHECK
 
 expected_coordinates = pd.MultiIndex.from_product(
     [EXPECTED_DIAMETERS, EXPECTED_RPM],
@@ -357,9 +274,7 @@ unexpected_coordinates_df = pd.DataFrame(
 )
 
 
-# =============================================================================
-# 14. TARGET FINITENESS / PHYSICAL CHECK
-# =============================================================================
+# TARGET FINITENESS / PHYSICAL CHECK
 
 target_rows = []
 
@@ -394,9 +309,7 @@ for target in TARGET_COLUMNS:
 target_physical_check = pd.DataFrame(target_rows)
 
 
-# =============================================================================
-# 15. RPM = 0 SANITY CHECK
-# =============================================================================
+# RPM = 0 SANITY CHECK
 
 zero_rpm = working[working["Rpm"] == 0].copy()
 
@@ -457,10 +370,8 @@ else:
         "hc_hi_Nonzero_Count": 0,
     }])
 
+# DIAMETER/RPM REPRESENTATION
 
-# =============================================================================
-# 16. DIAMETER/RPM REPRESENTATION
-# =============================================================================
 
 diameter_summary = (
     working.groupby("d")
@@ -485,9 +396,7 @@ rpm_summary = (
 )
 
 
-# =============================================================================
-# 17. OVERALL STATUS
-# =============================================================================
+# OVERALL STATUS
 
 all_pass = (
     len(working) == EXPECTED_ROWS
@@ -539,9 +448,7 @@ overall_status = pd.DataFrame([{
 }])
 
 
-# =============================================================================
 # 18. METHOD / TRACEABILITY NOTES
-# =============================================================================
 
 notes = pd.DataFrame([
     [
@@ -604,11 +511,6 @@ notes = pd.DataFrame([
 ])
 
 notes.columns = ["Item", "Value"]
-
-
-# =============================================================================
-# 19. WRITE OUTPUT WORKBOOK
-# =============================================================================
 
 with pd.ExcelWriter(
     OUTPUT_FILE,
@@ -723,41 +625,36 @@ with pd.ExcelWriter(
         index=False
     )
 
-
-# =============================================================================
-# 20. CONSOLE SUMMARY
-# =============================================================================
-
-print("-" * 78)
+print("\n\n\n")
 print("DATASET")
-print("-" * 78)
+print("\n")
 print(f"Rows:          {len(working)}")
 print(f"Diameters:     {actual_diameters}")
 print(f"RPM levels:    {actual_rpm}")
 print(f"Unique coords: {working[['d', 'Rpm']].drop_duplicates().shape[0]}")
-print()
+print("\n\n")
 
-print("-" * 78)
+
 print("TARGETS")
-print("-" * 78)
+print("\n\n\n")
 print(target_physical_check.to_string(index=False))
 print()
 
-print("-" * 78)
+print("\n\n\n")
 print("RPM = 0 SANITY CHECK")
-print("-" * 78)
+print("\n\n\n")
 print(zero_rpm_summary.to_string(index=False))
 print()
 
-print("-" * 78)
+print("\n\n\n")
 print("GRID CHECK")
-print("-" * 78)
+print("\n\n\n")
 print(grid_check.to_string(index=False))
 print()
 
-print("-" * 78)
+print("\n\n\n")
 print("OVERALL STATUS")
-print("-" * 78)
+print("\n\n\n")
 print(overall_status.to_string(index=False))
 print()
 
@@ -766,10 +663,7 @@ print(f"Output: {OUTPUT_FILE}")
 if all_pass:
     print()
     print("STEP 0 PASSED.")
-    print("Next step: Step 1 - create the locked 67/17 experimental split.")
 else:
     print()
     print("STEP 0 REQUIRES REVIEW.")
-    print("Do NOT proceed to Step 1 until the failed checks are resolved.")
 
-print("=" * 78)
