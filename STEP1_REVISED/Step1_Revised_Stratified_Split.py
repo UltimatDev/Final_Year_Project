@@ -27,16 +27,17 @@ TARGET_COLUMNS = [
 EXPECTED_TRAIN = 67
 EXPECTED_TEST = 17
 
-LOCKED_TEST_POINT_IDS = [
-    71, 79, 83,
-    59, 64, 70,
-    43, 51, 53,
-    29, 36, 42,
-    18, 23, 27,
-    4, 8,
-]
-
+RANDOM_SEED = 42
 EXPECTED_DIAMETERS = [6, 8, 10, 12, 14, 16]
+RPM_REGION_COUNTS = {"Low": 6, "Medium": 6, "High": 5}
+
+
+def rpm_region(rpm):
+    if rpm <= 80:
+        return "Low"
+    if rpm <= 180:
+        return "Medium"
+    return "High"
 
 xls = pd.ExcelFile(INPUT_FILE)
 
@@ -85,32 +86,50 @@ if sorted(df["d"].unique().tolist()) != EXPECTED_DIAMETERS:
         f"Unexpected diameter values: {sorted(df['d'].unique().tolist())}"
     )
 
-available_ids = set(df["Point_ID"].astype(int).tolist())
-locked_ids = set(LOCKED_TEST_POINT_IDS)
+df["RPM_Region"] = df["Rpm"].apply(rpm_region)
 
-missing_locked_ids = sorted(locked_ids - available_ids)
+if sum(RPM_REGION_COUNTS.values()) != EXPECTED_TEST:
+    raise ValueError("RPM region allocations must sum to 17 holdout observations.")
 
-if missing_locked_ids:
-    raise ValueError(
-        f"Locked test Point_IDs are missing from Working_Data: "
-        f"{missing_locked_ids}"
-    )
+selected_test = None
+selected_seed = None
 
-if len(LOCKED_TEST_POINT_IDS) != EXPECTED_TEST:
-    raise ValueError(
-        "The locked test ID list does not contain exactly 17 IDs."
-    )
+for seed in range(RANDOM_SEED, RANDOM_SEED + 10000):
+    sampled_parts = []
+    for offset, (region, count) in enumerate(RPM_REGION_COUNTS.items()):
+        group = df[df["RPM_Region"] == region]
+        if len(group) < count:
+            raise ValueError(f"Not enough observations in RPM region {region}.")
+        sampled_parts.append(group.sample(n=count, random_state=seed + offset))
 
+    candidate = pd.concat(sampled_parts, ignore_index=False)
+    diameter_counts = candidate["d"].value_counts()
+
+    if (
+        set(candidate["d"].unique()) == set(EXPECTED_DIAMETERS)
+        and all(diameter_counts.get(d, 0) in (2, 3) for d in EXPECTED_DIAMETERS)
+    ):
+        selected_test = candidate.copy()
+        selected_seed = seed
+        break
+
+if selected_test is None:
+    raise RuntimeError("Could not construct a stratified split satisfying diameter coverage.")
+
+LOCKED_TEST_POINT_IDS = sorted(selected_test["Point_ID"].astype(int).tolist())
+test_id_set = set(LOCKED_TEST_POINT_IDS)
 
 test_df = (
-    df[df["Point_ID"].isin(LOCKED_TEST_POINT_IDS)]
+    df[df["Point_ID"].isin(test_id_set)]
+    .drop(columns=["RPM_Region"])
     .copy()
     .sort_values(["d", "Rpm", "Point_ID"])
     .reset_index(drop=True)
 )
 
 train_df = (
-    df[~df["Point_ID"].isin(LOCKED_TEST_POINT_IDS)]
+    df[~df["Point_ID"].isin(test_id_set)]
+    .drop(columns=["RPM_Region"])
     .copy()
     .sort_values(["d", "Rpm", "Point_ID"])
     .reset_index(drop=True)
@@ -256,8 +275,9 @@ split_log = pd.DataFrame([
     ["Training anchors", len(train_df)],
     ["Experimental holdout", len(test_df)],
     ["Holdout fraction_percent", len(test_df) / len(df) * 100.0],
-    ["Split basis", "Fixed experimental (d, RPM) coordinates"],
-    ["Random seed", "Not used; locked Point_ID list retained"],
+    ["Split basis", "Stratified by RPM region; diameter counts constrained to 2-3 per diameter"],
+    ["Random seed", selected_seed],
+    ["RPM region allocation", str(RPM_REGION_COUNTS)],
     ["Test Point_IDs", ", ".join(map(str, LOCKED_TEST_POINT_IDS))],
     ["Target variables", ", ".join(TARGET_COLUMNS)],
     ["Synthetic interpolation used", "No"],
@@ -354,7 +374,7 @@ with pd.ExcelWriter(
 
 
 print("=" * 78)
-print("STEP 1 - REVISED LEAKAGE-SAFE EXPERIMENTAL TRAIN/TEST SPLIT")
+print("STEP 1 - STRATIFIED LEAKAGE-SAFE EXPERIMENTAL TRAIN/TEST SPLIT")
 print("=" * 78)
 print()
 
@@ -407,8 +427,9 @@ print(overall_status.to_string(index=False))
 print()
 
 if overall_status.loc[0, "Status"] == "PASS":
-    print("STEP 1 PASSED AND SPLIT IS LOCKED.")
-    print("Next step: Step 2 - revised LOOCV method selection.")
+    print("STEP 1 PASSED AND STRATIFIED SPLIT IS REPRODUCIBLE.")
+    print(f"Selected random seed: {selected_seed}")
+    print("Next step: rerun Steps 2 onward using this new split.")
 else:
     print("STEP 1 FAILED. Do not proceed until the checks are resolved.")
 
